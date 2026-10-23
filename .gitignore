@@ -1,0 +1,16 @@
+venv/
+env/
+.env
+
+pycache/
+*.pyc
+*.pyo
+*.pyd
+
+qdrant_data/
+data/
+temp_*.pdf
+*.pdf
+
+.DS_Store
+Thumbs.db
