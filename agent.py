@@ -1,7 +1,9 @@
 import os
 import time
 import base64
+import re
 import mimetypes
+import pymupdf
 import requests
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, END
@@ -33,17 +35,20 @@ def call_gemini(prompt: str, image_paths: List[str] = None) -> str:
                     }
                 })
 
+    # SPEED OPTIMIZATION: Strict maxOutputTokens forces the model to finish quickly
     payload = {
         "contents": [{"parts": parts}],
-        "generationConfig": {"temperature": 0}
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 400 
+        }
     }
     headers = {"Content-Type": "application/json"}
     
-    # Priority cascade: If one model's daily quota dies OR it doesn't exist, seamlessly route to the next
-    # Priority cascade using active 2026 Gemini models
+    # Priority cascade: Shifted 'lite' to primary for maximum speed during real-time UI inference
     models_to_try = [
-        "gemini-3.8-flash",       # Primary model
-        "gemini-3.5-flash-lite",  # High-throughput, cost-sensitive fallback
+        "gemini-3.5-flash-lite",  # High-throughput, lowest latency primary
+        "gemini-3.8-flash",       # Standard flash fallback
         "gemini-4-argon"          # Flagship reasoning fallback
     ]
     
@@ -52,7 +57,12 @@ def call_gemini(prompt: str, image_paths: List[str] = None) -> str:
         
         # Try each model twice for standard 503 traffic spikes
         for attempt in range(2):
-            response = requests.post(url, headers=headers, json=payload)
+            try:
+                # SPEED OPTIMIZATION: Hard 15-second network timeout. If it hangs, it dies and cascades immediately.
+                response = requests.post(url, headers=headers, json=payload, timeout=15)
+            except requests.exceptions.Timeout:
+                print(f"    [Timeout] {model} network request hung for >15s. Cascading...")
+                break # Breaks the retry loop, moves to the next model in models_to_try
             
             if response.status_code == 200:
                 return response.json()["candidates"][0]["content"]["parts"][0]["text"]
@@ -63,68 +73,126 @@ def call_gemini(prompt: str, image_paths: List[str] = None) -> str:
                 
             elif response.status_code == 429:
                 print(f"    [Quota Exhausted] {model} daily limit reached. Cascading...")
-                break # Breaks the retry loop, moves to the next model in models_to_try
+                break 
                 
             elif response.status_code == 404:
                 print(f"    [Model Unavailable] {model} is not accessible on this endpoint. Cascading...")
-                break # Breaks the retry loop, moves to the next model
+                break 
                 
         # If it fails with a hard error that isn't quota, server load, or missing model, crash gracefully
-        if response.status_code not in [429, 503, 404]:
+        if 'response' in locals() and response.status_code not in [429, 503, 404]:
             raise Exception(f"API Error ({response.status_code}): {response.text}")
             
     raise Exception("Critical: All Google model fallbacks and daily quotas have been exhausted.")
+
+
+from typing import TypedDict, List
 
 # 2. Define Agent State Schema
 class AgentState(TypedDict):
     claim: str
     text_context: List[str]
+    retrieved_metadata: List[dict]
     image_context: List[str]
     needs_web_search: bool
     final_response: str
 
+
+def generate_highlighted_citation(text_chunk, page_num, output_filename, source_pdf):
+    """Dynamically highlights the entire exact quote across multiple lines."""
+    if not source_pdf or not os.path.exists(source_pdf):
+        print(f"⚠️ Error: Source PDF {source_pdf} not found.")
+        return None
+        
+    try:
+        doc = pymupdf.open(source_pdf)
+        page_index = int(page_num) - 1 
+        
+        if page_index < 0 or page_index >= len(doc):
+            return None
+            
+        page = doc[page_index]
+        
+        # 1. Clean the LLM quote of excess formatting and hidden characters
+        clean_chunk = " ".join(text_chunk.split())
+        
+        # 2. Chop the full quote into small 5-word phrases. 
+        # This completely bypasses physical line-break boundaries in the PDF.
+        words = clean_chunk.split()
+        phrases = [" ".join(words[i:i+4]) for i in range(0, len(words), 4)]
+        
+        # 3. Highlight every phrase individually to build a massive, continuous highlight block
+        for phrase in phrases:
+            # Skip phrases that are too short to accurately match
+            if len(phrase) < 10:
+                continue
+                
+            text_instances = page.search_for(phrase)
+            for inst in text_instances:
+                annot = page.add_highlight_annot(inst)
+                annot.set_colors(stroke=(1, 0.9, 0)) # RGB for Yellow
+                annot.update()
+            
+        os.makedirs("data/images", exist_ok=True)
+        output_path = f"data/images/{output_filename}"
+        
+        pix = page.get_pixmap(matrix=pymupdf.Matrix(2, 2)) 
+        pix.save(output_path)
+        doc.close()
+        
+        return output_path
+    except Exception as e:
+        print(f"⚠️ Citation Render Error: {e}")
+        return None
+    
 # 3. Define Workflow Nodes
 def retrieve_node(state: AgentState):
-    """Page-Linked Retrieval: Bypasses CLIP's inability to read charts by linking images to high-scoring text."""
-    # 1. Pull the best text evidence
-    text_hits = search_evidence(state["claim"], limit=4, item_type="text")
+    """Strictly retrieves text and metadata. Visual rendering is deferred to the verdict node."""
+    text_hits = search_evidence(state["claim"], limit=7, item_type="text")
     
-    # 2. Identify which pages contained the critical text
-    relevant_pages = list(set([hit.payload.get('page') for hit in text_hits if hit.payload.get('page')]))
+    texts = []
+    metadata = []
     
-    # 3. Pull images ONLY from those highly relevant pages
-    images = []
-    if relevant_pages:
-        # We query the DB for images, then filter by the pages we know are relevant
-        image_hits = search_evidence(state["claim"], limit=15, item_type="image")
-        for hit in image_hits:
-            if hit.payload.get('page') in relevant_pages and len(images) < 3:
-                images.append(hit.payload["path"])
-    
-    texts = [f"[Page {hit.payload.get('page', 'N/A')}] {hit.payload['content']}" for hit in text_hits]
-            
+    for hit in text_hits:
+        chunk = hit.payload["content"]
+        page_num = hit.payload.get("page", 1)
+        source_pdf = hit.payload.get("source_file")
+        
+        texts.append(f"[Page {page_num}] {chunk}")
+        
+        # Store the mapping so the verdict node can match the LLM's exact quote to the physical file
+        metadata.append({
+            "page": page_num, 
+            "source": source_pdf, 
+            "chunk": chunk
+        })
+                
     return {
         "text_context": texts,
-        "image_context": images
+        "retrieved_metadata": metadata
     }
 
 def generate_verdict_node(state: AgentState):
     claim = state["claim"]
     context = "\n\n".join(state["text_context"])
-    images = state["image_context"]
+    metadata = state["retrieved_metadata"]
     
-    prompt = f"""You are an impartial, highly rigorous debate judge.
-Analyze the provided text evidence AND attached visual diagrams to render a verdict on the user's claim.
+    prompt = f"""You are an impartial, highly rigorous debate judge analyzing a specific document.
+Analyze the provided text evidence to render a strictly logical verdict on the user's claim.
+
+CRITICAL INSTRUCTIONS:
+1. If the provided evidence does not explicitly contain enough information to validate the point, you MUST declare the verdict INCONCLUSIVE. Do not invent logic.
+2. You MUST quote the actual text to prove your points.
 
 You MUST structure your exact response using these three specific headings:
 ### SUPPORTING EVIDENCE
-(List the facts, text, and visual data that validate the claim)
+(Provide direct quotes from the text that support the claim, or write "None found.")
 
 ### REFUTING EVIDENCE
-(List the facts, text, and visual data that contradict or challenge the claim)
+(Provide direct quotes from the text that contradict the claim, or write "None found.")
 
 ### FINAL VERDICT
-(Conclude with a definitive SUPPORTED, REFUTED, or INCONCLUSIVE, followed by a harsh, logical summary)
+(Start with SUPPORTED, REFUTED, or INCONCLUSIVE, followed by 1-2 sentences of strict logical reasoning explaining why.)
 
 Claim to Evaluate:
 {claim}
@@ -132,8 +200,46 @@ Claim to Evaluate:
 Retrieved Text Evidence Context:
 {context}"""
     
-    final_text = call_gemini(prompt, image_paths=images)
-    return {"final_response": final_text}
+    print("⏳ Waiting for Gemini API response...")
+    start_gemini = time.time() 
+    
+    # We no longer pass images to Gemini; it evaluates pure text logic first
+    final_text = call_gemini(prompt, image_paths=None) 
+    
+    end_gemini = time.time() 
+    print(f"✅ Gemini API responded in {end_gemini - start_gemini:.2f} seconds.")
+    
+    # --- EXACT-QUOTE VISUAL TARGETING ---
+    # 1. Extract the exact text Gemini enclosed in quotes
+    quotes = re.findall(r'"([^"]*)"', final_text)
+    
+    images = []
+    if quotes and metadata:
+        target_quote = quotes[0] # Target the primary piece of evidence
+        
+        # 2. Cross-reference the quote with our metadata to find the correct page
+        best_match = metadata[0] # Default to the top hit
+        for meta in metadata:
+            # If the first 20 characters of the quote match this chunk, we found the page
+            if target_quote[:20] in meta["chunk"]:
+                best_match = meta
+                break
+                
+        # 3. Render the physical bounding box on the exact quote
+        img_path = generate_highlighted_citation(
+            text_chunk=target_quote, 
+            page_num=best_match["page"],
+            output_filename=f"citation_exact_{int(time.time())}.png",
+            source_pdf=best_match["source"]
+        )
+        
+        if img_path:
+            images.append(img_path)
+            
+    return {
+        "final_response": final_text, 
+        "image_context": images
+    }
 
 def grade_evidence_node(state: AgentState):
     claim = state["claim"]

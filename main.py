@@ -5,7 +5,7 @@ from pydantic import BaseModel
 import logging
 import os
 import shutil
-
+import asyncio
 from agent import run_debate_agent
 from ingest import ingest_pdf
 
@@ -54,7 +54,14 @@ async def upload_pdf(file: UploadFile = File(...)):
 @app.post("/evaluate_claim", response_model=VerdictResponse)
 async def evaluate_claim(request: ClaimRequest):
     try:
+        # Run directly on the main thread to prevent Qdrant/SQLite database locking
         result = run_debate_agent(request.claim)
-        return VerdictResponse(verdict=result["verdict"], images=result["retrieved_images"], texts=result["retrieved_texts"])
+        
+        return VerdictResponse(
+            verdict=result["verdict"],
+            images=result["retrieved_images"],
+            texts=result["retrieved_texts"]
+        )
     except Exception as e:
+        print(f"🔥 CRITICAL ERROR IN PIPELINE: {str(e)}") # This prints the exact error to the terminal
         raise HTTPException(status_code=500, detail=str(e))
