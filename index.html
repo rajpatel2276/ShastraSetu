@@ -51,6 +51,15 @@
                     <span id="uploadText" class="font-semibold text-sm">Upload Knowledge Base (PDF)</span>
                 </button>
             </div>
+            
+            <!-- ACTIVE DOCUMENTS WORKSPACE PANEL -->
+            <div style="margin-top: 20px; background: #1a1c23; padding: 15px; border-radius: 8px; border: 1px solid #2d3748;">
+                <h3 style="font-size: 14px; color: #a0aec0; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em;">Active Knowledge Base</h3>
+                <ul id="document-list" style="list-style: none; padding: 0; margin: 0; font-size: 13px; color: #e2e8f0;">
+                    <li style="color: #718096; font-style: italic;">No documents loaded yet...</li>
+                </ul>
+            </div>
+
 
             <!-- Visual Evidence Display -->
             <div class="panel flex-1 p-6 flex flex-col overflow-hidden">
@@ -97,10 +106,58 @@
                 uploadText.innerHTML = `<span class="text-emerald-500"><i class="fa-solid fa-check"></i> Database Synchronized</span>`;
                 claimInput.disabled = false; sendBtn.disabled = false;
                 claimInput.placeholder = "Enter your claim here...";
+                fetchActiveDocuments();
             } catch (err) {
                 uploadText.innerHTML = `<span class="text-red-500"><i class="fa-solid fa-xmark"></i> Error processing PDF</span>`;
             }
         }
+        async function fetchActiveDocuments() {
+            try {
+                const response = await fetch('/documents');
+                const data = await response.json();
+                const listEl = document.getElementById('document-list');
+        
+                if (data.documents && data.documents.length > 0) {
+                    listEl.innerHTML = '';
+                    data.documents.forEach(doc => {
+                        // Clean up the timestamp prefix for clean UI display (e.g., "1793410020_3.pdf" -> "3.pdf")
+                        const displayName = doc.includes('_') ? doc.split('_').slice(1).join('_') : doc;
+                        listEl.innerHTML += `
+                            <li style="padding: 8px 0; border-bottom: 1px solid #2d3748; display: flex; justify-content: space-between; align-items: center;">
+                                <span style="color: #48bb78; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px;" title="${displayName}">
+                                    ● ${displayName}
+                                </span>
+                                <button onclick="deleteDocument('${doc}')" style="background: #e53e3e; border: none; color: white; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;" title="Delete Document">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </li>`;
+                    });
+                } else {
+                    listEl.innerHTML = `<li style="color: #718096; font-style: italic;">No documents loaded...</li>`;
+                }
+            } catch (e) {
+                console.error("Failed to fetch documents", e);
+            }
+        }
+
+        async function deleteDocument(filename) {
+            if (!confirm(`Are you sure you want to delete ${filename}?`)) return;
+    
+            try {
+                const res = await fetch(`/documents/${filename}`, { method: 'DELETE' });
+                if (res.ok) {
+                    console.log(`Deleted ${filename}`);
+                    fetchActiveDocuments(); // Refresh the list instantly
+                } else {
+                    alert("Failed to delete document.");
+                }
+            } catch (err) {
+                console.error("Error deleting document:", err);
+            }
+        }
+
+        // Call it on page load and right after a successful PDF upload
+        window.addEventListener('DOMContentLoaded', fetchActiveDocuments);
 
         async function submitClaim() {
             const input = document.getElementById('claimInput');
@@ -109,26 +166,26 @@
             const claim = input.value.trim();
             if (!claim) return;
 
-            input.disabled = true; document.getElementById('sendBtn').disabled = true;
-            
-            output.innerHTML = `<div class="flex items-center gap-3 text-indigo-400 font-mono text-sm"><i class="fa-solid fa-circle-notch fa-spin"></i> Processing multimodal inference...</div>`;
+             input.disabled = true; document.getElementById('sendBtn').disabled = true;
+    
+             output.innerHTML = `<div class="flex items-center gap-3 text-indigo-400 font-mono text-sm"><i class="fa-solid fa-circle-notch fa-spin"></i> Processing multimodal inference...</div>`;
             gallery.innerHTML = `<div class="text-sm text-zinc-600 italic text-center mt-10">Scanning vector space...</div>`;
 
             try {
                 const response = await fetch('/evaluate_claim', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ claim: claim })
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ claim: claim })
                 });
-                
+        
                 const data = await response.json();
-                
-                // Parse the structured output
-                let rawText = data.verdict;
-                
+        
+                // Parse the structured output using final_response (matching backend key)
+                let rawText = data.final_response || "";
+        
                 // Fallback rendering if the model didn't perfectly follow the strict headings
                 let htmlOutput = `<div class="whitespace-pre-wrap">${rawText}</div>`;
-                
+        
                 // Advanced parsing for the contrast UI
                 if(rawText.includes("### SUPPORTING EVIDENCE") && rawText.includes("### REFUTING EVIDENCE")) {
                     const supportSplit = rawText.split("### REFUTING EVIDENCE");
@@ -145,27 +202,28 @@
                         <div class="grid grid-cols-2 gap-6 mb-6">
                             <div class="highlight-support p-5 rounded-r-lg">
                                 <h4 class="text-emerald-500 font-bold mb-3 flex items-center gap-2"><i class="fa-solid fa-check-circle"></i> Supporting Evidence</h4>
-                                <div class="whitespace-pre-wrap">${supportText}</div>
-                            </div>
-                            <div class="highlight-refute p-5 rounded-r-lg">
-                                <h4 class="text-red-500 font-bold mb-3 flex items-center gap-2"><i class="fa-solid fa-xmark-circle"></i> Refuting Evidence</h4>
-                                <div class="whitespace-pre-wrap">${refuteText}</div>
-                            </div>
+                            <div class="whitespace-pre-wrap">${supportText}</div>
                         </div>
-                        <div class="bg-zinc-800 p-6 rounded-lg border border-zinc-700">
+                        <div class="highlight-refute p-5 rounded-r-lg">
+                            <h4 class="text-red-500 font-bold mb-3 flex items-center gap-2"><i class="fa-solid fa-xmark-circle"></i> Refuting Evidence</h4>
+                            <div class="whitespace-pre-wrap">${refuteText}</div>
+                        </div>
+                        </div>
+                            <div class="bg-zinc-800 p-6 rounded-lg border border-zinc-700">
                             <h4 class="text-indigo-400 font-bold mb-2 uppercase tracking-widest text-xs">Final Synthesis</h4>
                             <div class="whitespace-pre-wrap font-bold text-white text-base">${verdictText}</div>
                         </div>
                     `;
                 }
-                
+        
                 output.innerHTML = htmlOutput;
 
-                // Render Images
-                if (data.images && data.images.length > 0) {
-                    gallery.innerHTML = data.images.map(img => `
+                // Render Images using image_context (matching backend key) with a safe fallback array
+                const images = data.image_context || [];
+                if (images.length > 0) {
+                    gallery.innerHTML = images.map(img => `
                         <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-2 overflow-hidden shadow-md">
-                            <img src="/${img}?t=${Date.now()}" class="w-full h-auto object-contain bg-zinc-950 rounded" onclick="window.open(this.src)">
+                            <img src="/${img}?t=${Date.now()}" class="w-full h-auto object-contain bg-zinc-950 rounded cursor-pointer" onclick="window.open(this.src)" title="Click to view full size">
                         </div>
                     `).join('');
                 } else {
@@ -175,10 +233,13 @@
             } catch (error) {
                 output.innerHTML = `<div class="text-red-500">Inference Error: ${error.message}</div>`;
             }
-            
+    
             input.disabled = false; document.getElementById('sendBtn').disabled = false;
             input.value = ''; input.focus();
         }
+        
+
+        
     </script>
 </body>
 </html>

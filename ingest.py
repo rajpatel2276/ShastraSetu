@@ -8,6 +8,7 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from PIL import Image
 import shutil
+import time
 
 # Import shared client to prevent lock errors
 from retrieve import client, collection_name
@@ -49,14 +50,8 @@ def embed_content(text=None, image=None):
     return [float(x) for x in tensor.detach().cpu().flatten().tolist()]
 
 def semantic_chunk_text(text, max_chars=800):
-    """
-    First-principles semantic chunking.
-    Eliminates mid-sentence PDF formatting breaks and respects logical sentence boundaries.
-    """
-    # 1. Heal artificial PDF line breaks within sentences, preserving true double-newline paragraphs
+    """First-principles semantic chunking respecting sentence boundaries."""
     text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text)
-    
-    # 2. Split strictly by sentence boundaries (punctuation followed by whitespace)
     sentences = re.split(r'(?<=[.!?])\s+', text)
     
     chunks = []
@@ -66,15 +61,11 @@ def semantic_chunk_text(text, max_chars=800):
         sentence = sentence.strip()
         if not sentence:
             continue
-            
-        # If adding the next sentence stays under the limit, append it
         if len(current_chunk) + len(sentence) + 1 <= max_chars:
             current_chunk += (" " + sentence) if current_chunk else sentence
         else:
-            # If the chunk is full, lock it in and start a new one
             if current_chunk:
                 chunks.append(current_chunk)
-            # Retain the previous sentence as overlap to preserve context across boundaries
             current_chunk = sentence
             
     if current_chunk:
@@ -82,22 +73,44 @@ def semantic_chunk_text(text, max_chars=800):
         
     return chunks
 
-def ingest_pdf(pdf_path: str):
-    print(f"Processing Uploaded PDF: {pdf_path}")
+def manage_pdf_storage(upload_dir="data/pdfs", max_files=5):
+    """Enforces a strict FIFO limit on stored PDFs to prevent system bloat."""
+    os.makedirs(upload_dir, exist_ok=True)
+    files = [os.path.join(upload_dir, f) for f in os.listdir(upload_dir) if f.endswith('.pdf')]
+    
+    # If we exceed our maximum allowed files, delete the oldest ones
+    if len(files) >= max_files:
+        # Sort by last modification time (oldest first)
+        files.sort(key=os.path.getmtime)
+        files_to_delete = files[:len(files) - max_files + 1]
+        
+        for old_file in files_to_delete:
+            try:
+                os.remove(old_file)
+                print(f"🗑️ Storage Manager: Purged old PDF to prevent bloat -> {old_file}")
+            except Exception as e:
+                print(f"⚠️ Failed to delete old file {old_file}: {e}")
+
+def ingest_pdf(pdf_path: str, original_filename: str = "document.pdf"):
+    print(f"Processing Uploaded PDF: {original_filename}")
     start_time = time.time() 
     
-    os.makedirs("data/pdfs", exist_ok=True)
-    permanent_pdf_path = "data/pdfs/active_document.pdf"
+    safe_filename = original_filename.replace(' ', '_')
+    permanent_pdf_path = os.path.join("data/pdfs", safe_filename)
     
+    # 1. Check if this exact file is already in the knowledge base
+    if os.path.exists(permanent_pdf_path):
+        print(f"⚠️ File '{original_filename}' already exists in the knowledge base. Skipping duplicate ingestion.")
+        return 0 # Return 0 vectors added since it's already there
+        
+    # 2. Otherwise save normally
     shutil.copy(pdf_path, permanent_pdf_path)
     
-    if client.collection_exists(collection_name):
-        client.delete_collection(collection_name)
-        
-    client.create_collection(
-        collection_name=collection_name,
-        vectors_config=VectorParams(size=512, distance=Distance.COSINE),
-    )
+    if not client.collection_exists(collection_name):
+        client.create_collection(
+            collection_name=collection_name,
+            vectors_config=VectorParams(size=512, distance=Distance.COSINE),
+        )
     
     doc = pymupdf.open(permanent_pdf_path)
     points = []
@@ -107,11 +120,9 @@ def ingest_pdf(pdf_path: str):
         text = page.get_text()
         
         if text.strip():
-            # Apply the custom semantic chunker instead of the LangChain abstraction
             chunks = semantic_chunk_text(text, max_chars=800)
-            
             for chunk in chunks:
-                vector = embed_query(chunk) # Ensure this calls your 512-dim embedding function
+                vector = embed_query(chunk)
                 points.append(
                     PointStruct(
                         id=str(uuid.uuid4()), 
@@ -131,5 +142,5 @@ def ingest_pdf(pdf_path: str):
     doc.close() 
     
     end_time = time.time()
-    print(f"✅ Semantic Ingestion Complete: {len(points)} precise vectors embedded in {end_time - start_time:.2f} seconds.")
+    print(f"✅ Multi-Doc Ingestion Complete: {len(points)} vectors embedded for {original_filename} in {end_time - start_time:.2f} seconds.")
     return len(points)

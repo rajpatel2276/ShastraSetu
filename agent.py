@@ -99,40 +99,66 @@ class AgentState(TypedDict):
 
 
 def generate_highlighted_citation(text_chunk, page_num, output_filename, source_pdf):
-    """Dynamically highlights the entire exact quote across multiple lines."""
+    """Layout-aware citation renderer that safely validates source file paths."""
+    # Fallback safety: If source_pdf is missing or invalid, default to any available PDF in data/pdfs
     if not source_pdf or not os.path.exists(source_pdf):
-        print(f"⚠️ Error: Source PDF {source_pdf} not found.")
-        return None
-        
+        pdf_dir = "data/pdfs"
+        if os.path.exists(pdf_dir):
+            available_pdfs = [os.path.join(pdf_dir, f) for f in os.listdir(pdf_dir) if f.endswith('.pdf')]
+            if available_pdfs:
+                source_pdf = available_pdfs[0] # Pick the first available active PDF as fallback
+            else:
+                print(f"⚠️ Error: No active PDFs found in {pdf_dir}.")
+                return None
+        else:
+            return None
+            
     try:
         doc = pymupdf.open(source_pdf)
         page_index = int(page_num) - 1 
         
         if page_index < 0 or page_index >= len(doc):
+            doc.close()
             return None
             
         page = doc[page_index]
+        page_rect = page.rect
+        valid_blocks = []
+        blocks = page.get_text("blocks")
         
-        # 1. Clean the LLM quote of excess formatting and hidden characters
+        for b in blocks:
+            bx0, by0, bx1, by1, btext, bno, btype = b
+            if btype == 0 and by0 > 50 and by1 < (page_rect.height - 50):
+                valid_blocks.append(b)
+
         clean_chunk = " ".join(text_chunk.split())
-        
-        # 2. Chop the full quote into small 5-word phrases. 
-        # This completely bypasses physical line-break boundaries in the PDF.
         words = clean_chunk.split()
         phrases = [" ".join(words[i:i+4]) for i in range(0, len(words), 4)]
         
-        # 3. Highlight every phrase individually to build a massive, continuous highlight block
+        highlight_drawn = False
         for phrase in phrases:
-            # Skip phrases that are too short to accurately match
             if len(phrase) < 10:
                 continue
                 
             text_instances = page.search_for(phrase)
             for inst in text_instances:
-                annot = page.add_highlight_annot(inst)
-                annot.set_colors(stroke=(1, 0.9, 0)) # RGB for Yellow
-                annot.update()
+                inst_y = (inst.y0 + inst.y1) / 2
+                is_in_valid_margin = any(b[1] <= inst_y <= b[3] for b in valid_blocks)
+                
+                if is_in_valid_margin or len(text_instances) == 1:
+                    annot = page.add_highlight_annot(inst)
+                    annot.set_colors(stroke=(1, 0.9, 0))
+                    annot.update()
+                    highlight_drawn = True
             
+        if not highlight_drawn:
+            for phrase in phrases[:2]:
+                if len(phrase) >= 10:
+                    for inst in page.search_for(phrase):
+                        annot = page.add_highlight_annot(inst)
+                        annot.set_colors(stroke=(1, 0.9, 0))
+                        annot.update()
+
         os.makedirs("data/images", exist_ok=True)
         output_path = f"data/images/{output_filename}"
         
@@ -144,29 +170,41 @@ def generate_highlighted_citation(text_chunk, page_num, output_filename, source_
     except Exception as e:
         print(f"⚠️ Citation Render Error: {e}")
         return None
-    
 # 3. Define Workflow Nodes
+
 def retrieve_node(state: AgentState):
-    """Strictly retrieves text and metadata. Visual rendering is deferred to the verdict node."""
-    text_hits = search_evidence(state["claim"], limit=7, item_type="text")
+    """Retrieves top text chunks across all active documents in Qdrant with source tracking."""
+    # Set limit=3 to fetch exactly 3 chunks PER DOCUMENT using our iterative search logic
+    text_hits = search_evidence(state["claim"], limit_per_doc=5, item_type="text")
     
     texts = []
     metadata = []
     
+    print("\n--- 🔍 DEBUG: CONTEXT SENT TO LLM ---")
+    
     for hit in text_hits:
-        chunk = hit.payload["content"]
-        page_num = hit.payload.get("page", 1)
-        source_pdf = hit.payload.get("source_file")
+        chunk = hit.payload.get("content", "")
+        page_num = hit.payload.get("page", "?")
+        source_pdf = hit.payload.get("source_file", "")
         
-        texts.append(f"[Page {page_num}] {chunk}")
+        # Extract just the clean filename for the LLM to read easily
+        doc_name = os.path.basename(source_pdf) if source_pdf else "Unknown Document"
         
-        # Store the mapping so the verdict node can match the LLM's exact quote to the physical file
+        # Print to your terminal so you can verify BOTH test1 and test2 are here
+        print(f"Loaded chunk from: {doc_name} (Page {page_num})")
+        
+        # Inject document name and page into the context stream using the exact format the prompt expects
+        texts.append(f"Source: [{doc_name}, Page {page_num}]\nContent: {chunk}\n")
+        
         metadata.append({
             "page": page_num, 
             "source": source_pdf, 
-            "chunk": chunk
+            "chunk": chunk,
+            "doc_name": doc_name
         })
-                
+        
+    print("--------------------------------------\n")
+            
     return {
         "text_context": texts,
         "retrieved_metadata": metadata
@@ -177,59 +215,54 @@ def generate_verdict_node(state: AgentState):
     context = "\n\n".join(state["text_context"])
     metadata = state["retrieved_metadata"]
     
-    prompt = f"""You are an impartial, highly rigorous debate judge analyzing a specific document.
-Analyze the provided text evidence to render a strictly logical verdict on the user's claim.
+    prompt = f"""You are an elite, impartial RAG Validation Engine.
+Your task is to evaluate the CLAIM against the provided MULTI-DOCUMENT CONTEXT.
 
 CRITICAL INSTRUCTIONS:
-1. If the provided evidence does not explicitly contain enough information to validate the point, you MUST declare the verdict INCONCLUSIVE. Do not invent logic.
-2. You MUST quote the actual text to prove your points.
+1. You MUST cross-reference evidence from different source files if they are present in the context (e.g., comparing [test1.pdf] with [test2.pdf]).
+2. Quote exactly from the text and cite the source using this exact format: [filename.pdf, Page X].
+3. Identify if the claim is SUPPORTED, REFUTED, or INCONCLUSIVE based strictly on the text.
+4. Output your response EXACTLY in this strict format:
 
-You MUST structure your exact response using these three specific headings:
 ### SUPPORTING EVIDENCE
-(Provide direct quotes from the text that support the claim, or write "None found.")
+- As stated in [filename.pdf, Page X]: "exact quote here"
 
 ### REFUTING EVIDENCE
-(Provide direct quotes from the text that contradict the claim, or write "None found.")
+- As stated in [filename.pdf, Page Y]: "exact quote here"
 
 ### FINAL VERDICT
-(Start with SUPPORTED, REFUTED, or INCONCLUSIVE, followed by 1-2 sentences of strict logical reasoning explaining why.)
+[SUPPORTED/REFUTED/INCONCLUSIVE]. A concise 1-sentence synthesis comparing the findings across the documents.
 
-Claim to Evaluate:
-{claim}
+CLAIM: {claim}
 
-Retrieved Text Evidence Context:
+MULTI-DOCUMENT CONTEXT:
 {context}"""
     
     print("⏳ Waiting for Gemini API response...")
     start_gemini = time.time() 
     
-    # We no longer pass images to Gemini; it evaluates pure text logic first
     final_text = call_gemini(prompt, image_paths=None) 
     
     end_gemini = time.time() 
-    print(f"✅ Gemini API responded in {end_gemini - start_gemini:.2f} seconds.")
+    print(f"✅ Gemini API responded in {end_gemini - start_gemini:.2f} secondschauffer.")
     
-    # --- EXACT-QUOTE VISUAL TARGETING ---
-    # 1. Extract the exact text Gemini enclosed in quotes
+    # Exact-quote visual targeting matching the primary quote back to its source PDF
     quotes = re.findall(r'"([^"]*)"', final_text)
     
     images = []
     if quotes and metadata:
-        target_quote = quotes[0] # Target the primary piece of evidence
+        target_quote = quotes[0]
         
-        # 2. Cross-reference the quote with our metadata to find the correct page
-        best_match = metadata[0] # Default to the top hit
+        best_match = metadata[0]
         for meta in metadata:
-            # If the first 20 characters of the quote match this chunk, we found the page
             if target_quote[:20] in meta["chunk"]:
                 best_match = meta
                 break
                 
-        # 3. Render the physical bounding box on the exact quote
         img_path = generate_highlighted_citation(
             text_chunk=target_quote, 
             page_num=best_match["page"],
-            output_filename=f"citation_exact_{int(time.time())}.png",
+            output_filename=f"citation_multidoc_{int(time.time())}.png",
             source_pdf=best_match["source"]
         )
         

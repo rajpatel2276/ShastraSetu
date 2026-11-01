@@ -1,4 +1,5 @@
 import torch
+import os
 from transformers import CLIPProcessor, CLIPModel
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
@@ -40,22 +41,39 @@ def embed_query(text):
         
     return vector
 
-def search_evidence(query, limit=3, item_type=None):
-    """Searches Qdrant with optional payload filtering."""
+
+import os
+from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+def search_evidence(query, limit_per_doc=5, item_type=None): 
+    """Pulls EXACTLY the top chunks from EACH active PDF and groups them by document."""
     query_vector = embed_query(query)
     
-    query_filter = None
-    if item_type:
-        query_filter = Filter(
-            must=[FieldCondition(key="type", match=MatchValue(value=item_type))]
+    pdf_dir = "data/pdfs"
+    active_docs = []
+    if os.path.exists(pdf_dir):
+        active_docs = [os.path.join(pdf_dir, f) for f in os.listdir(pdf_dir) if f.endswith('.pdf')]
+        
+    all_points = []
+    
+    if not active_docs:
+        response = client.query_points(
+            collection_name=collection_name, query=query_vector, limit=limit_per_doc * 2, with_payload=True
         )
-    
-    response = client.query_points(
-        collection_name=collection_name,
-        query=query_vector,
-        limit=limit,
-        with_payload=True,
-        query_filter=query_filter
-    )
-    
-    return response.points
+        return response.points
+
+    # Fetch and append chunks document by document
+    for doc_path in active_docs:
+        doc_filter = Filter(must=[FieldCondition(key="source_file", match=MatchValue(value=doc_path))])
+        
+        response = client.query_points(
+            collection_name=collection_name,
+            query=query_vector,
+            limit=limit_per_doc, # Strictly get 2 chunks from THIS document
+            with_payload=True,
+            query_filter=doc_filter
+        )
+        # We DO NOT sort globally here. We just append them so Doc 1 and Doc 2 are both guaranteed to be in the list.
+        all_points.extend(response.points)
+        
+    return all_points

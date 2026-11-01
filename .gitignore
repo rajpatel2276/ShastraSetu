@@ -1,16 +1,20 @@
+# Environments
 venv/
 env/
-.env
-
-pycache/
+__pycache__/
 *.pyc
 *.pyo
-*.pyd
 
+# Secrets
+.env
+
+# Vector Database
 qdrant_data/
-data/
-temp_*.pdf
-*.pdf
+qdrant_storage/
 
-.DS_Store
-Thumbs.db
+# Local Data & Artifacts
+data/texts.json
+data/pdfs/*
+!data/pdfs/.gitkeep
+data/images/*
+!data/images/.gitkeep
