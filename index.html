@@ -16,74 +16,111 @@
         .highlight-support { border-left: 4px solid #22c55e; background: rgba(34, 197, 94, 0.05); }
         .highlight-refute { border-left: 4px solid #ef4444; background: rgba(239, 68, 68, 0.05); }
     </style>
+    <style>
+        /* Sleek, minimal scrollbars for the dark UI */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+    </style>
 </head>
-<body class="h-screen w-screen overflow-hidden flex flex-col p-4 gap-4">
+<body class="h-screen w-screen bg-[#09090b] text-zinc-300 font-sans overflow-hidden flex flex-col selection:bg-indigo-500/30">
 
-    <!-- Top Navigation & Input -->
-    <header class="panel flex items-center justify-between p-4 shadow-md shrink-0">
-        <div class="flex items-center gap-4 w-1/3">
-            <i class="fa-solid fa-scale-unbalanced text-2xl text-indigo-500"></i>
+    <!-- TOP NAVIGATION: THE COMMAND BAR -->
+    <header class="h-16 shrink-0 border-b border-zinc-800/80 bg-[#0c0c0e]/90 backdrop-blur-md flex items-center justify-between px-6 z-20">
+        <div class="flex items-center gap-4">
+            <div class="bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20 shadow-inner">
+                <i class="fa-solid fa-scale-unbalanced text-indigo-400"></i>
+            </div>
             <div>
-                <h1 class="font-bold text-lg leading-tight text-white">Debate RAG Engine</h1>
-                <p class="text-xs text-zinc-400 mono">v2.0 :: Vector Synthesis</p>
+                <h1 class="font-bold text-sm tracking-wide text-zinc-100 uppercase">Debate RAG Engine</h1>
+                <p class="text-[10px] text-zinc-500 font-mono tracking-widest uppercase">v2.0 :: Vector Synthesis</p>
             </div>
         </div>
         
-        <div class="w-1/2 flex gap-2">
-            <input type="text" id="claimInput" disabled placeholder="Upload PDF to initialize vector space..." 
-                class="flex-1 bg-zinc-900 border border-zinc-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50">
-            <button id="sendBtn" disabled onclick="submitClaim()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-semibold disabled:opacity-50 transition-colors">
-                Evaluate
+        <!-- Search/Inference Input -->
+        <div class="w-1/2 flex gap-3 max-w-2xl">
+            <input type="text" id="claimInput" disabled 
+                class="w-full bg-[#18181b] border border-zinc-800 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 rounded-md px-4 py-2 text-sm text-zinc-200 placeholder-zinc-600 outline-none transition-all shadow-inner font-medium" 
+                placeholder="Upload PDF to initialize vector space...">
+            <button id="sendBtn" disabled onclick="submitClaim()" 
+                class="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-6 rounded-md transition-all shadow-[0_0_15px_rgba(79,70,229,0.15)] hover:shadow-[0_0_20px_rgba(79,70,229,0.3)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm">
+                Evaluate <i class="fa-solid fa-bolt text-indigo-200"></i>
             </button>
         </div>
     </header>
 
-    <!-- Split Pane Workspace -->
-    <main class="flex-1 flex gap-4 overflow-hidden">
+    <!-- MAIN WORKSPACE -->
+    <main class="flex-1 flex overflow-hidden relative">
         
-        <!-- Left Pane: Evidence & Ingestion -->
-        <section class="w-1/3 flex flex-col gap-4">
-            <!-- Upload Module -->
-            <div class="panel p-6 shrink-0 text-center">
-                <input type="file" id="fileInput" accept="application/pdf" class="hidden" onchange="handleFileUpload(this.files[0])">
-                <button onclick="document.getElementById('fileInput').click()" class="w-full border-2 border-dashed border-zinc-600 hover:border-indigo-500 rounded-lg p-6 transition-colors flex flex-col items-center gap-2 text-zinc-400 hover:text-indigo-400">
-                    <i class="fa-solid fa-file-arrow-up text-3xl"></i>
-                    <span id="uploadText" class="font-semibold text-sm">Upload Knowledge Base (PDF)</span>
-                </button>
-            </div>
-            
-            <!-- ACTIVE DOCUMENTS WORKSPACE PANEL -->
-            <div style="margin-top: 20px; background: #1a1c23; padding: 15px; border-radius: 8px; border: 1px solid #2d3748;">
-                <h3 style="font-size: 14px; color: #a0aec0; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em;">Active Knowledge Base</h3>
-                <ul id="document-list" style="list-style: none; padding: 0; margin: 0; font-size: 13px; color: #e2e8f0;">
-                    <li style="color: #718096; font-style: italic;">No documents loaded yet...</li>
-                </ul>
-            </div>
-
-
-            <!-- Visual Evidence Display -->
-            <div class="panel flex-1 p-6 flex flex-col overflow-hidden">
-                <h2 class="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-4 border-b border-zinc-800 pb-2">Retrieved Visual Artifacts</h2>
-                <div id="imageGallery" class="flex-1 overflow-y-auto custom-scroll flex flex-col gap-4">
-                    <div class="text-sm text-zinc-600 italic text-center mt-10">Awaiting inference...</div>
+        <!-- LEFT SIDEBAR: RIGID CONTROL PANEL -->
+        <aside class="w-80 shrink-0 bg-[#0c0c0e] border-r border-zinc-800/80 flex flex-col overflow-y-auto custom-scroll z-10 shadow-[4px_0_24px_rgba(0,0,0,0.2)]">
+            <div class="p-6 flex flex-col gap-8">
+                
+                <!-- Ingestion Module -->
+                <div>
+                    <h2 class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-database"></i> Knowledge Ingestion
+                    </h2>
+                    <!-- Notice: Logic IDs remain untouched -->
+                    <div class="group relative cursor-pointer" onclick="document.getElementById('fileInput').click()">
+                        <input type="file" id="fileInput" accept="application/pdf" class="hidden" onchange="handleFileUpload(this.files[0])">
+                        <div class="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 rounded-xl transition-opacity opacity-0 group-hover:opacity-100 pointer-events-none"></div>
+                        <div class="border border-dashed border-zinc-700/60 hover:border-indigo-500/50 bg-[#121214] rounded-xl p-5 transition-all flex flex-col items-center gap-3 text-center relative z-10 shadow-inner">
+                            <div class="bg-zinc-800/50 p-3 rounded-full text-zinc-400 group-hover:text-indigo-400 group-hover:bg-indigo-500/10 transition-colors">
+                                <i class="fa-solid fa-file-arrow-up text-xl"></i>
+                            </div>
+                            <span id="uploadText" class="font-medium text-xs text-zinc-400 group-hover:text-zinc-300 transition-colors">Upload PDF Database</span>
+                        </div>
+                    </div>
                 </div>
+
+                <!-- Active Vector Space -->
+                <div>
+                    <h2 class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-folder-tree"></i> Active Vector Space
+                    </h2>
+                    <ul id="document-list" class="space-y-2">
+                        <li class="text-xs text-zinc-600 italic">Fetching documents...</li>
+                    </ul>
+                </div>
+
+                <!-- Visual Artifacts -->
+                <div>
+                    <h2 class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-image"></i> Visual Artifacts
+                    </h2>
+                    <div id="imageGallery" class="space-y-3">
+                        <div class="text-xs text-zinc-600 italic text-center p-4 bg-[#121214] rounded-lg border border-zinc-800/50 shadow-inner">
+                            No visual artifacts retrieved.
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </aside>
+
+        <!-- RIGHT STAGE: INFERENCE ENGINE -->
+        <!-- This panel scrolls entirely independently of the sidebar -->
+        <section class="flex-1 bg-[#09090b] relative overflow-y-auto custom-scroll">
+            <div class="max-w-4xl mx-auto p-8 md:p-12 min-h-full flex flex-col">
+                
+                <div id="verdictOutput" class="flex-1 flex flex-col relative">
+                    <!-- Professional Idle State -->
+                    <div class="m-auto flex flex-col items-center justify-center text-center max-w-sm">
+                        <div class="w-16 h-16 rounded-2xl bg-[#0c0c0e] border border-zinc-800/80 flex items-center justify-center mb-6 shadow-inner ring-1 ring-white/5">
+                            <i class="fa-solid fa-layer-group text-2xl text-zinc-600"></i>
+                        </div>
+                        <h2 class="text-lg font-medium text-zinc-300 mb-2">Engine Ready for Inference</h2>
+                        <p class="text-sm text-zinc-500 leading-relaxed">
+                            Upload a document to initialize the vector space, then enter a claim in the command bar to synthesize evidence.
+                        </p>
+                    </div>
+                </div>
+
             </div>
         </section>
-
-        <!-- Right Pane: Debate Synthesis -->
-        <section class="w-2/3 panel flex flex-col overflow-hidden relative">
-            <div class="bg-zinc-900 p-4 border-b border-zinc-800 flex justify-between items-center">
-                <h2 class="text-sm font-bold text-zinc-300"><i class="fa-solid fa-microchip mr-2 text-indigo-400"></i>Inference Output</h2>
-            </div>
-            
-            <div id="verdictOutput" class="flex-1 overflow-y-auto custom-scroll p-8 text-sm leading-relaxed text-zinc-300">
-                <div class="h-full flex flex-col items-center justify-center text-zinc-600 gap-3">
-                    <i class="fa-solid fa-bolt text-4xl"></i>
-                    <p>Engine standby. Awaiting claim evaluation.</p>
-                </div>
-            </div>
-        </section>
-
+        
     </main>
 
     <script>
