@@ -23,6 +23,19 @@
         ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
     </style>
+    <!-- JetBrains Mono Font for Data Feeds -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        /* Phase 3: Technical Font Class */
+        .font-tech { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Phase 4: Smooth Render Animation */
+        @keyframes slideFade {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-fade { animation: slideFade 0.4s ease-out forwards; }
+    </style>
 </head>
 <body class="h-screen w-screen bg-[#09090b] text-zinc-300 font-sans overflow-hidden flex flex-col selection:bg-indigo-500/30">
 
@@ -161,11 +174,11 @@
                         // Clean up the timestamp prefix for clean UI display (e.g., "1793410020_3.pdf" -> "3.pdf")
                         const displayName = doc.includes('_') ? doc.split('_').slice(1).join('_') : doc;
                         listEl.innerHTML += `
-                            <li style="padding: 8px 0; border-bottom: 1px solid #2d3748; display: flex; justify-content: space-between; align-items: center;">
-                                <span style="color: #48bb78; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px;" title="${displayName}">
-                                    ● ${displayName}
+                            <li class="group" style="padding: 10px 12px; margin-bottom: 6px; border: 1px solid rgba(39,39,42,0.4); border-radius: 8px; background: rgba(24,24,27,0.3); display: flex; justify-content: space-between; align-items: center; transition: all 0.2s ease-in-out;" onmouseover="this.style.background='rgba(39,39,42,0.4)'" onmouseout="this.style.background='rgba(24,24,27,0.3)'">
+                                <span class="font-tech" style="color: #48bb78; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px;" title="${displayName}">
+                                    <i class="fa-solid fa-file-pdf" style="color: #52525b; margin-right: 6px; transition: color 0.2s;" onmouseover="this.style.color='#48bb78'" onmouseout="this.style.color='#52525b'"></i>${displayName}
                                 </span>
-                                <button onclick="deleteDocument('${doc}')" style="background: #e53e3e; border: none; color: white; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;" title="Delete Document">
+                                <button onclick="deleteDocument('${doc}')" style="background: transparent; border: 1px solid rgba(229,62,62,0.2); color: #fc8181; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; transition: all 0.2s;" onmouseover="this.style.background='rgba(229,62,62,0.15)'; this.style.borderColor='rgba(229,62,62,0.4)'" onmouseout="this.style.background='transparent'; this.style.borderColor='rgba(229,62,62,0.2)'" title="Delete Document">
                                     <i class="fa-solid fa-trash"></i>
                                 </button>
                             </li>`;
@@ -259,48 +272,36 @@
                     const verdictText = refuteSplit[1] ? refuteSplit[1].trim() : "";
 
                     htmlOutput = `
-                        <div class="flex justify-between items-start mb-6 pb-4 border-b border-zinc-800/80">
-                            <div class="pr-8">
+                        <div class="animate-slide-fade space-y-6">
+                            <!-- Analyzed Claim -->
+                            <div class="mb-6 pb-4 border-b border-zinc-800/50">
                                 <h3 class="text-zinc-500 uppercase font-bold text-xs tracking-wider mb-2">Analyzed Claim</h3>
-                                <p class="text-zinc-100 text-lg font-medium leading-relaxed" id="reportClaim">"${claim}"</p>
-                            </div>
-                            <button onclick="copyReport(this)" class="shrink-0 text-zinc-400 hover:text-indigo-400 transition-colors p-2.5 bg-zinc-900 border border-zinc-800 rounded-lg hover:border-indigo-500/50 shadow-sm" title="Copy Synthesis">
-                                <!-- Native SVG Copy Icon -->
-                                <svg class="copy-svg" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-                                </svg>
-                                <!-- Native SVG Checkmark Icon (Hidden by default) -->
-                                <svg class="check-svg hidden text-emerald-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                                    <polyline points="20 6 9 17 4 12"/>
-                                </svg>
-                            </button>
-                        </div>
-                        
-                        <div class="grid grid-cols-2 gap-6 mb-6">
-                            <!-- Support Card -->
-                            <div class="bg-[#022c22]/40 border border-[#064e3b] rounded-xl p-5 shadow-inner">
-                                <h4 class="text-emerald-400 font-semibold mb-4 flex items-center gap-2 border-b border-emerald-900/50 pb-3 text-sm tracking-wide">
-                                    <i class="fa-solid fa-check-circle text-emerald-500"></i> SUPPORTING EVIDENCE
-                                </h4>
-                                <div class="text-zinc-300 text-sm leading-relaxed space-y-3 whitespace-pre-wrap">${supportText}</div>
+                                <p class="text-white text-lg font-medium leading-relaxed">"${claim}"</p>
                             </div>
                             
-                            <!-- Refute Card -->
-                            <div class="bg-[#4c0519]/40 border border-[#881337] rounded-xl p-5 shadow-inner">
-                                <h4 class="text-rose-400 font-semibold mb-4 flex items-center gap-2 border-b border-rose-900/50 pb-3 text-sm tracking-wide">
-                                    <i class="fa-solid fa-xmark-circle text-rose-500"></i> REFUTING EVIDENCE
-                                </h4>
-                                <div class="text-zinc-300 text-sm leading-relaxed space-y-3 whitespace-pre-wrap">${refuteText}</div>
+                            <!-- Evidence Grid (Depth & Material) -->
+                            <div class="grid grid-cols-2 gap-6 mb-6">
+                                <div class="bg-[#022c22]/20 border border-zinc-800/50 hover:border-emerald-900/50 transition-all duration-300 rounded-lg p-5 shadow-inner">
+                                    <h4 class="text-emerald-500 font-bold mb-3 flex items-center gap-2">
+                                        <i class="fa-solid fa-check-circle"></i> Supporting Evidence
+                                    </h4>
+                                    <!-- font-tech applied here so raw Markdown looks like a terminal feed -->
+                                    <div class="whitespace-pre-wrap font-tech text-[13px] text-emerald-50/70 leading-relaxed">${supportText}</div>
+                                </div>
+                                <div class="bg-[#4c0519]/20 border border-zinc-800/50 hover:border-rose-900/50 transition-all duration-300 rounded-lg p-5 shadow-inner">
+                                    <h4 class="text-rose-500 font-bold mb-3 flex items-center gap-2">
+                                        <i class="fa-solid fa-xmark-circle"></i> Refuting Evidence
+                                    </h4>
+                                    <div class="whitespace-pre-wrap font-tech text-[13px] text-rose-50/70 leading-relaxed">${refuteText}</div>
+                                </div>
                             </div>
-                        </div>
-                        
-                        <!-- Synthesis Card -->
-                        <div class="bg-gradient-to-br from-[#1e1b4b]/60 to-zinc-900 border border-[#3730a3]/60 rounded-xl p-6 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] relative overflow-hidden">
-                            <div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
-                            <h4 class="text-indigo-400 font-semibold mb-3 uppercase tracking-widest text-xs flex items-center gap-2">
-                                <i class="fa-solid fa-microchip"></i> Final Synthesis
-                            </h4>
-                            <div class="text-indigo-50 text-base font-medium leading-relaxed whitespace-pre-wrap" id="reportVerdict">${verdictText}</div>
+
+                            <!-- Final Synthesis -->
+                            <div class="bg-zinc-900/40 border border-indigo-900/30 hover:border-indigo-700/50 transition-all duration-300 rounded-lg p-6 shadow-inner relative overflow-hidden">
+                                <div class="absolute top-0 left-0 w-1 h-full bg-indigo-500/50"></div>
+                                <h4 class="text-indigo-400 font-bold mb-3 uppercase tracking-widest text-xs">Final Synthesis</h4>
+                                <div class="whitespace-pre-wrap font-tech text-sm text-indigo-50/80 leading-relaxed">${verdictText}</div>
+                            </div>
                         </div>
                     `;
                 }
