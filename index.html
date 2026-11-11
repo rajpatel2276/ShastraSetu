@@ -40,21 +40,22 @@
 <body class="h-screen w-screen bg-[#09090b] text-zinc-300 font-sans overflow-hidden flex flex-col selection:bg-indigo-500/30">
 
     <!-- TOP NAVIGATION: THE COMMAND BAR -->
-    <header class="h-16 shrink-0 border-b border-zinc-800/80 bg-[#0c0c0e]/90 backdrop-blur-md flex items-center justify-between px-6 z-20">
+    <header class="p-4 border-b border-zinc-800/80 bg-zinc-900/80 backdrop-blur-md flex items-center justify-between shadow-sm sticky top-0 z-50">
         <div class="flex items-center gap-4">
+            <!-- Icon with subtle depth -->
             <div class="bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20 shadow-inner">
                 <i class="fa-solid fa-scale-unbalanced text-indigo-400"></i>
             </div>
             <div>
                 <h1 class="font-bold text-sm tracking-wide text-zinc-100 uppercase">Debate RAG Engine</h1>
-                <p class="text-[10px] text-zinc-500 font-mono tracking-widest uppercase">v2.0 :: Vector Synthesis</p>
+                <p class="text-[10px] text-zinc-500 font-tech tracking-widest uppercase">v2.0 :: Vector Synthesis</p>
             </div>
         </div>
         
-        <!-- Search/Inference Input -->
+        <!-- Search/Inference Input with Glow on Focus -->
         <div class="w-1/2 flex gap-3 max-w-2xl">
             <input type="text" id="claimInput" disabled 
-                class="w-full bg-[#18181b] border border-zinc-800 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 rounded-md px-4 py-2 text-sm text-zinc-200 placeholder-zinc-600 outline-none transition-all shadow-inner font-medium" 
+                class="w-full bg-[#18181b] border border-zinc-800 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 rounded-md px-4 py-2 text-sm text-zinc-200 placeholder-zinc-600 outline-none transition-all shadow-inner font-medium disabled:opacity-50" 
                 placeholder="Upload PDF to initialize vector space...">
             <button id="sendBtn" disabled onclick="submitClaim()" 
                 class="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-6 rounded-md transition-all shadow-[0_0_15px_rgba(79,70,229,0.15)] hover:shadow-[0_0_20px_rgba(79,70,229,0.3)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm">
@@ -75,16 +76,24 @@
                     <h2 class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                         <i class="fa-solid fa-database"></i> Knowledge Ingestion
                     </h2>
-                    <!-- Notice: Logic IDs remain untouched -->
-                    <div class="group relative cursor-pointer" onclick="document.getElementById('fileInput').click()">
+                    
+                    <!-- UPGRADED UPLOAD BUTTON -->
+                    <div class="bg-zinc-900/40 border border-zinc-800/80 rounded-xl p-4 shrink-0 text-center shadow-inner">
                         <input type="file" id="fileInput" accept="application/pdf" class="hidden" onchange="handleFileUpload(this.files[0])">
-                        <div class="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 rounded-xl transition-opacity opacity-0 group-hover:opacity-100 pointer-events-none"></div>
-                        <div class="border border-dashed border-zinc-700/60 hover:border-indigo-500/50 bg-[#121214] rounded-xl p-5 transition-all flex flex-col items-center gap-3 text-center relative z-10 shadow-inner">
-                            <div class="bg-zinc-800/50 p-3 rounded-full text-zinc-400 group-hover:text-indigo-400 group-hover:bg-indigo-500/10 transition-colors">
+                        
+                        <button onclick="document.getElementById('fileInput').click()" 
+                            class="group w-full border border-dashed border-zinc-700/60 hover:border-indigo-500/50 bg-[#121214] rounded-lg p-5 transition-all duration-300 flex flex-col items-center gap-3 relative overflow-hidden shadow-inner">
+                            
+                            <!-- Background gradient that fades in on hover -->
+                            <div class="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                            
+                            <div class="bg-zinc-800/50 p-3 rounded-full text-zinc-400 group-hover:text-indigo-400 group-hover:bg-indigo-500/10 transition-colors duration-300 relative z-10">
                                 <i class="fa-solid fa-file-arrow-up text-xl"></i>
                             </div>
-                            <span id="uploadText" class="font-medium text-xs text-zinc-400 group-hover:text-zinc-300 transition-colors">Upload PDF Database</span>
-                        </div>
+                            <span id="uploadText" class="font-medium text-xs text-zinc-400 group-hover:text-zinc-300 transition-colors duration-300 relative z-10 tracking-wide">
+                                Upload PDF Database
+                            </span>
+                        </button>
                     </div>
                 </div>
 
@@ -112,7 +121,6 @@
 
             </div>
         </aside>
-
         <!-- RIGHT STAGE: INFERENCE ENGINE -->
         <!-- This panel scrolls entirely independently of the sidebar -->
         <section class="flex-1 bg-[#09090b] relative overflow-y-auto custom-scroll">
