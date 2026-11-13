@@ -237,41 +237,12 @@ CLAIM: {claim}
 
 MULTI-DOCUMENT CONTEXT:
 {context}"""
-    
-    print("⏳ Waiting for Gemini API response...")
-    start_gemini = time.time() 
-    
-    final_text = call_gemini(prompt, image_paths=None) 
-    
-    end_gemini = time.time() 
-    print(f"✅ Gemini API responded in {end_gemini - start_gemini:.2f} secondschauffer.")
-    
-    # Exact-quote visual targeting matching the primary quote back to its source PDF
-    quotes = re.findall(r'"([^"]*)"', final_text)
-    
-    images = []
-    if quotes and metadata:
-        target_quote = quotes[0]
-        
-        best_match = metadata[0]
-        for meta in metadata:
-            if target_quote[:20] in meta["chunk"]:
-                best_match = meta
-                break
-                
-        img_path = generate_highlighted_citation(
-            text_chunk=target_quote, 
-            page_num=best_match["page"],
-            output_filename=f"citation_multidoc_{int(time.time())}.png",
-            source_pdf=best_match["source"]
-        )
-        
-        if img_path:
-            images.append(img_path)
             
     return {
-        "final_response": final_text, 
-        "image_context": images
+        "final_prompt": prompt, 
+        "retrieved_metadata": metadata,
+        "final_response": "STREAM_DELEGATED", 
+        "image_context": []
     }
 
 def grade_evidence_node(state: AgentState):

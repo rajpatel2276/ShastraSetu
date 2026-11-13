@@ -244,100 +244,178 @@
             }).catch(err => console.error("Failed to copy text: ", err));
         }
 
+        // Modal Controllers
+        function openModal(imgSrc) {
+            const modal = document.getElementById('imageModal');
+            document.getElementById('modalImage').src = imgSrc;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            // Slight delay to allow display:flex to apply before fading in
+            setTimeout(() => modal.classList.remove('opacity-0'), 10);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('imageModal');
+            modal.classList.add('opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+                document.getElementById('modalImage').src = "";
+            }, 300); // Matches the duration-300 transition
+        }
+
         async function submitClaim() {
-            const input = document.getElementById('claimInput');
-            const output = document.getElementById('verdictOutput');
-            const gallery = document.getElementById('imageGallery');
-            const claim = input.value.trim();
+            const claimInput = document.getElementById("claimInput");
+            const claim = claimInput.value.trim();
             if (!claim) return;
 
-             input.disabled = true; document.getElementById('sendBtn').disabled = true;
-    
-             output.innerHTML = `<div class="flex items-center gap-3 text-indigo-400 font-mono text-sm"><i class="fa-solid fa-circle-notch fa-spin"></i> Processing multimodal inference...</div>`;
-            gallery.innerHTML = `<div class="text-sm text-zinc-600 italic text-center mt-10">Scanning vector space...</div>`;
+            const sendBtn = document.getElementById("sendBtn");
+            const outputDiv = document.getElementById("verdictOutput");
+            
+            // Lock UI
+            claimInput.disabled = true;
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin text-indigo-200"></i>';
+
+            // Inject the empty panels instantly
+            outputDiv.innerHTML = `
+                <div class="animate-slide-fade space-y-6">
+                    <div class="mb-6 pb-4 border-b border-zinc-800/50">
+                        <h3 class="text-zinc-500 uppercase font-bold text-xs tracking-wider mb-2">Analyzed Claim</h3>
+                        <p class="text-white text-lg font-medium leading-relaxed">"${claim}"</p>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-6 mb-6">
+                        <div class="bg-[#022c22]/20 border border-zinc-800/50 rounded-lg p-5 shadow-inner">
+                            <h4 class="text-emerald-500 font-bold mb-3 flex items-center gap-2">
+                                <i class="fa-solid fa-check-circle"></i> Supporting Evidence
+                            </h4>
+                            <div id="stream-support" class="whitespace-pre-wrap font-tech text-[13px] text-emerald-50/70 leading-relaxed"></div>
+                        </div>
+                        <div class="bg-[#4c0519]/20 border border-zinc-800/50 rounded-lg p-5 shadow-inner">
+                            <h4 class="text-rose-500 font-bold mb-3 flex items-center gap-2">
+                                <i class="fa-solid fa-xmark-circle"></i> Refuting Evidence
+                            </h4>
+                            <div id="stream-refute" class="whitespace-pre-wrap font-tech text-[13px] text-rose-50/70 leading-relaxed"></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-zinc-900/40 border border-indigo-900/30 rounded-lg p-6 shadow-inner relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-1 h-full bg-indigo-500/50 animate-pulse"></div>
+                        <h4 class="text-indigo-400 font-bold mb-3 uppercase tracking-widest text-xs">Final Synthesis</h4>
+                        <div id="stream-verdict" class="whitespace-pre-wrap font-tech text-sm text-indigo-50/80 leading-relaxed"></div>
+                    </div>
+                </div>
+            `;
+
+            const supportEl = document.getElementById("stream-support");
+            const refuteEl = document.getElementById("stream-refute");
+            const verdictEl = document.getElementById("stream-verdict");
 
             try {
-                const response = await fetch('/evaluate_claim', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ claim: claim })
+                const response = await fetch("/evaluate_claim", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ claim: claim })
                 });
-        
-                const data = await response.json();
-        
-                // Parse the structured output using final_response (matching backend key)
-                let rawText = data.final_response || "";
-        
-                // Fallback rendering if the model didn't perfectly follow the strict headings
-                let htmlOutput = `<div class="whitespace-pre-wrap">${rawText}</div>`;
-        
-                // Advanced parsing for the contrast UI
-                if(rawText.includes("### SUPPORTING EVIDENCE") && rawText.includes("### REFUTING EVIDENCE")) {
-                    const supportSplit = rawText.split("### REFUTING EVIDENCE");
-                    const supportText = supportSplit[0].replace("### SUPPORTING EVIDENCE", "").trim();
-                    const refuteSplit = supportSplit[1].split("### FINAL VERDICT");
-                    const refuteText = refuteSplit[0].trim();
-                    const verdictText = refuteSplit[1] ? refuteSplit[1].trim() : "";
 
-                    htmlOutput = `
-                        <div class="animate-slide-fade space-y-6">
-                            <!-- Analyzed Claim -->
-                            <div class="mb-6 pb-4 border-b border-zinc-800/50">
-                                <h3 class="text-zinc-500 uppercase font-bold text-xs tracking-wider mb-2">Analyzed Claim</h3>
-                                <p class="text-white text-lg font-medium leading-relaxed">"${claim}"</p>
-                            </div>
-                            
-                            <!-- Evidence Grid (Depth & Material) -->
-                            <div class="grid grid-cols-2 gap-6 mb-6">
-                                <div class="bg-[#022c22]/20 border border-zinc-800/50 hover:border-emerald-900/50 transition-all duration-300 rounded-lg p-5 shadow-inner">
-                                    <h4 class="text-emerald-500 font-bold mb-3 flex items-center gap-2">
-                                        <i class="fa-solid fa-check-circle"></i> Supporting Evidence
-                                    </h4>
-                                    <!-- font-tech applied here so raw Markdown looks like a terminal feed -->
-                                    <div class="whitespace-pre-wrap font-tech text-[13px] text-emerald-50/70 leading-relaxed">${supportText}</div>
-                                </div>
-                                <div class="bg-[#4c0519]/20 border border-zinc-800/50 hover:border-rose-900/50 transition-all duration-300 rounded-lg p-5 shadow-inner">
-                                    <h4 class="text-rose-500 font-bold mb-3 flex items-center gap-2">
-                                        <i class="fa-solid fa-xmark-circle"></i> Refuting Evidence
-                                    </h4>
-                                    <div class="whitespace-pre-wrap font-tech text-[13px] text-rose-50/70 leading-relaxed">${refuteText}</div>
-                                </div>
-                            </div>
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+                
+                let fullText = "";
+                let buffer = ""; // ROBUST BUFFER: Prevents JSON crash on fragmented packets
 
-                            <!-- Final Synthesis -->
-                            <div class="bg-zinc-900/40 border border-indigo-900/30 hover:border-indigo-700/50 transition-all duration-300 rounded-lg p-6 shadow-inner relative overflow-hidden">
-                                <div class="absolute top-0 left-0 w-1 h-full bg-indigo-500/50"></div>
-                                <h4 class="text-indigo-400 font-bold mb-3 uppercase tracking-widest text-xs">Final Synthesis</h4>
-                                <div class="whitespace-pre-wrap font-tech text-sm text-indigo-50/80 leading-relaxed">${verdictText}</div>
-                            </div>
-                        </div>
-                    `;
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    
+                    let delimiterIndex;
+                    // Only process when we have a complete chunk marked by double newline
+                    while ((delimiterIndex = buffer.indexOf('\n\n')) >= 0) {
+                        const line = buffer.slice(0, delimiterIndex).trim();
+                        buffer = buffer.slice(delimiterIndex + 2);
+                        
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                
+                                if (data.type === 'error') {
+                                    verdictEl.textContent = data.content;
+                                    break;
+                                }
+                                
+                                if (data.type === 'chunk') {
+                                    fullText += data.content;
+                                    
+                                    // Route the text into the correct panels dynamically
+                                    let s = fullText, r = "", v = "";
+                                    if (fullText.includes("### REFUTING EVIDENCE")) {
+                                        const parts = fullText.split("### REFUTING EVIDENCE");
+                                        s = parts[0];
+                                        r = parts[1];
+                                        if (r.includes("### FINAL VERDICT")) {
+                                            const rParts = r.split("### FINAL VERDICT");
+                                            r = rParts[0];
+                                            v = rParts[1];
+                                        }
+                                    }
+                                    
+                                    supportEl.textContent = s.replace("### SUPPORTING EVIDENCE", "").trim();
+                                    refuteEl.textContent = r.trim();
+                                    verdictEl.textContent = v.trim();
+                                }
+                                
+                                if (data.type === 'complete') {
+                                    document.querySelector('.animate-pulse').classList.remove('animate-pulse');
+                                    
+                                    // Fetch the visual artifact
+                                    fetch("/generate_artifact", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ full_text: data.full_text, metadata: data.metadata })
+                                    }).then(res => res.json()).then(imgData => {
+                                        if (imgData.image_context && imgData.image_context.length > 0) {
+                                            const gallery = document.getElementById("imageGallery");
+                                            gallery.innerHTML = "";
+                                            imgData.image_context.forEach(img => {
+                                                // Added group hover and openModal onclick
+                                                gallery.innerHTML += `
+                                                    <div class="mt-2 p-1 bg-[#121214] border border-zinc-800/80 rounded-lg cursor-pointer group relative" onclick="openModal('${img}')">
+                                                        <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded">
+                                                            <i class="fa-solid fa-expand text-white text-xl drop-shadow-md"></i>
+                                                        </div>
+                                                        <img src="${img}" class="w-full rounded shadow-sm opacity-0 animate-slide-fade" onload="this.style.opacity=1">
+                                                    </div>`;
+                                            });
+                                        }
+                                    });
+                                }
+                            } catch (e) {
+                                console.warn("Failed to parse chunk, waiting for buffer to fill...", e);
+                            }
+                        }
+                    }
                 }
-        
-                output.innerHTML = htmlOutput;
-
-                // Render Images using image_context (matching backend key) with a safe fallback array
-                const images = data.image_context || [];
-                if (images.length > 0) {
-                    gallery.innerHTML = images.map(img => `
-                        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-2 overflow-hidden shadow-md">
-                            <img src="/${img}?t=${Date.now()}" class="w-full h-auto object-contain bg-zinc-950 rounded cursor-pointer" onclick="window.open(this.src)" title="Click to view full size">
-                        </div>
-                    `).join('');
-                } else {
-                    gallery.innerHTML = `<div class="text-sm text-zinc-600 italic text-center mt-10">No visual artifacts retrieved for this claim.</div>`;
-                }
-
             } catch (error) {
-                output.innerHTML = `<div class="text-red-500">Inference Error: ${error.message}</div>`;
+                console.error("Stream Error:", error);
+                verdictEl.textContent = "Engine encountered a fatal error during inference.";
+            } finally {
+                claimInput.disabled = false;
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = 'Evaluate <i class="fa-solid fa-bolt text-indigo-200"></i>';
             }
-    
-            input.disabled = false; document.getElementById('sendBtn').disabled = false;
-            input.value = ''; input.focus();
         }
         
-
-        
     </script>
+
+    <!-- FULL SCREEN IMAGE MODAL -->
+    <div id="imageModal" class="fixed inset-0 z-[100] bg-[#09090b]/95 backdrop-blur-md hidden items-center justify-center p-4 transition-all opacity-0 duration-300" onclick="closeModal()">
+        <button class="absolute top-6 right-6 text-zinc-500 hover:text-white transition-colors bg-zinc-900/50 p-4 rounded-full border border-zinc-800" onclick="closeModal()">
+            <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+        <img id="modalImage" src="" class="max-w-[90vw] max-h-[90vh] rounded-lg shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-zinc-800" onclick="event.stopPropagation()">
+    </div>
 </body>
 </html>

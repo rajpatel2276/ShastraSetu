@@ -1,4 +1,5 @@
 import torch
+import concurrent.futures
 import os
 from transformers import CLIPProcessor, CLIPModel
 from qdrant_client import QdrantClient
@@ -41,12 +42,10 @@ def embed_query(text):
         
     return vector
 
-
-import os
-from qdrant_client.models import Filter, FieldCondition, MatchValue
-
 def search_evidence(query, limit_per_doc=5, item_type=None): 
-    """Pulls EXACTLY the top chunks from EACH active PDF and groups them by document."""
+    """Pulls EXACTLY the top chunks from EACH active PDF in parallel."""
+    # CRITICAL SPEED WARNING: Ensure your embedding model (e.g., SentenceTransformer) 
+    # is initialized GLOBALLY at the top of this file, NOT inside this function.
     query_vector = embed_query(query)
     
     pdf_dir = "data/pdfs"
@@ -62,18 +61,22 @@ def search_evidence(query, limit_per_doc=5, item_type=None):
         )
         return response.points
 
-    # Fetch and append chunks document by document
-    for doc_path in active_docs:
+    # SPEED OPTIMIZATION: Execute all Qdrant queries concurrently
+    def fetch_for_doc(doc_path):
         doc_filter = Filter(must=[FieldCondition(key="source_file", match=MatchValue(value=doc_path))])
-        
         response = client.query_points(
             collection_name=collection_name,
             query=query_vector,
-            limit=limit_per_doc, # Strictly get 2 chunks from THIS document
+            limit=limit_per_doc,
             with_payload=True,
             query_filter=doc_filter
         )
-        # We DO NOT sort globally here. We just append them so Doc 1 and Doc 2 are both guaranteed to be in the list.
-        all_points.extend(response.points)
-        
+        return response.points
+
+    # Fire all network requests simultaneously
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = executor.map(fetch_for_doc, active_docs)
+        for res in results:
+            all_points.extend(res)
+            
     return all_points
